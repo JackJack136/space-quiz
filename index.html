@@ -665,6 +665,13 @@
     }
 
     function updatePersonalBest(finalScore) {
+      if (storageAvailable) {
+        const cachedBest = personalBest;
+        loadPersonalBest();
+        if (cachedBest !== null && (personalBest === null || cachedBest > personalBest)) {
+          personalBest = cachedBest;
+        }
+      }
       const isFirstRecord = personalBest === null;
       if (!isFirstRecord && finalScore <= personalBest) {
         return { isFirstRecord: false, isNewRecord: false };
