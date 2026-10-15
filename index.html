@@ -209,6 +209,20 @@
       transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    .storage-notice {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-hover);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .storage-notice[hidden] {
+      display: none;
+    }
+
     .question-text {
       font-size: 1.05rem;
       font-weight: 600;
@@ -432,6 +446,18 @@
       margin: 10px 0;
     }
 
+    .results-best-score {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .results-record {
+      color: var(--primary);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
     .results-message {
       color: var(--text-muted);
       font-size: 0.95rem;
@@ -479,6 +505,9 @@
       >
         <div class="progress-fill" id="progress-fill"></div>
       </div>
+      <p id="storage-notice" class="storage-notice" role="status" aria-live="polite" hidden>
+        Your personal best will not be saved across reloads because browser storage is unavailable.
+      </p>
     </header>
 
     <section id="question-view" aria-live="polite">
@@ -497,6 +526,8 @@
       <div id="results-emoji" class="emoji-reaction" role="img" aria-label="Reaction emoji">🪐</div>
       <h2 id="results-title" class="results-title">Mission Complete!</h2>
       <p id="results-score" class="results-score">0 / 10</p>
+      <p id="results-best-score" class="results-best-score"></p>
+      <p id="results-record" class="results-record" aria-live="polite"></p>
       <p id="results-message" class="results-message"></p>
       <button type="button" id="restart-btn" class="action-btn">Play Again ↻</button>
     </section>
@@ -566,9 +597,14 @@
       }
     ];
 
+    const PERSONAL_BEST_STORAGE_KEY = "spaceExplorationQuiz.personalBest.v1";
+    const PERSONAL_BEST_FORMAT_VERSION = 1;
+
     let currentIndex = 0;
     let score = 0;
     let answered = false;
+    let personalBest = null;
+    let storageAvailable = true;
 
     const scoreBadge = document.getElementById("score-badge");
     const questionCounter = document.getElementById("question-counter");
@@ -576,6 +612,7 @@
     const progressBar = document.getElementById("progress-bar");
     const progressFill = document.getElementById("progress-fill");
     const progressMeta = document.getElementById("progress-meta");
+    const storageNotice = document.getElementById("storage-notice");
 
     const questionView = document.getElementById("question-view");
     const questionText = document.getElementById("question-text");
@@ -587,8 +624,66 @@
     const resultsEmoji = document.getElementById("results-emoji");
     const resultsTitle = document.getElementById("results-title");
     const resultsScore = document.getElementById("results-score");
+    const resultsBestScore = document.getElementById("results-best-score");
+    const resultsRecord = document.getElementById("results-record");
     const resultsMessage = document.getElementById("results-message");
     const restartBtn = document.getElementById("restart-btn");
+
+    function markStorageUnavailable() {
+      storageAvailable = false;
+      storageNotice.hidden = false;
+    }
+
+    function loadPersonalBest() {
+      let storedValue;
+      try {
+        storedValue = localStorage.getItem(PERSONAL_BEST_STORAGE_KEY);
+      } catch {
+        markStorageUnavailable();
+        return;
+      }
+
+      if (storedValue === null) return;
+
+      let record;
+      try {
+        record = JSON.parse(storedValue);
+      } catch {
+        return;
+      }
+
+      if (
+        record &&
+        record.version === PERSONAL_BEST_FORMAT_VERSION &&
+        record.questionCount === QUESTIONS.length &&
+        Number.isInteger(record.score) &&
+        record.score >= 0 &&
+        record.score <= QUESTIONS.length
+      ) {
+        personalBest = record.score;
+      }
+    }
+
+    function updatePersonalBest(finalScore) {
+      const isFirstRecord = personalBest === null;
+      if (!isFirstRecord && finalScore <= personalBest) {
+        return { isFirstRecord: false, isNewRecord: false };
+      }
+
+      personalBest = finalScore;
+      if (storageAvailable) {
+        try {
+          localStorage.setItem(PERSONAL_BEST_STORAGE_KEY, JSON.stringify({
+            version: PERSONAL_BEST_FORMAT_VERSION,
+            questionCount: QUESTIONS.length,
+            score: finalScore
+          }));
+        } catch {
+          markStorageUnavailable();
+        }
+      }
+      return { isFirstRecord, isNewRecord: !isFirstRecord };
+    }
 
     function renderQuestion() {
       answered = false;
@@ -728,7 +823,18 @@
       resultsEmoji.textContent = reaction.emoji;
       resultsEmoji.setAttribute("aria-label", reaction.label);
       resultsTitle.textContent = reaction.title;
-      resultsScore.textContent = `${score} / ${QUESTIONS.length}`;
+      resultsScore.textContent = `Your score: ${score} / ${QUESTIONS.length}`;
+      const recordStatus = updatePersonalBest(score);
+      resultsBestScore.textContent = `Personal best: ${personalBest} / ${QUESTIONS.length}`;
+      if (recordStatus.isFirstRecord) {
+        resultsRecord.textContent = "First personal best recorded!";
+      } else if (recordStatus.isNewRecord) {
+        resultsRecord.textContent = "New personal best!";
+      } else if (score === personalBest) {
+        resultsRecord.textContent = "You matched your personal best.";
+      } else {
+        resultsRecord.textContent = "";
+      }
       resultsMessage.textContent = reaction.message;
 
       resultsView.classList.add("active");
@@ -783,6 +889,7 @@
       }
     });
 
+    loadPersonalBest();
     renderQuestion();
   </script>
 </body>
